@@ -7,6 +7,7 @@ import torch.optim as optim
 
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
+from torchvision.utils import save_image
 
 import math
 
@@ -50,8 +51,10 @@ def main(args):
     generator_optimizer = optim.Adam(generator.parameters(), lr=args.generator_lr, betas=(0.0, 0.99))
     discriminator_optimizer = optim.Adam(discriminator.parameters(), lr=args.discriminator_lr, betas=(0.0, 0.99))
 
-    resume = args.resume and os.path.isfile(args.resume)
-    if resume:
+    os.makedirs(args.images, exist_ok=True)
+    os.makedirs(args.checkpoint, exist_ok=True)
+
+    if args.resume and os.path.isfile(args.resume):
         print("=> loading checkpoint '{}'".format(args.resume))
         checkpoint = torch.load(args.resume, map_location=device)
 
@@ -63,11 +66,20 @@ def main(args):
 
         cur_nimg = checkpoint['cur_nimg']
         global_step = checkpoint['global_step']
-    else:
-        shutil.rmtree(args.images, ignore_errors=True)
-        shutil.rmtree(args.checkpoint, ignore_errors=True)
-        os.makedirs(args.images, exist_ok=True)
-        os.makedirs(args.checkpoint, exist_ok=True)
+
+
+    @torch.no_grad()
+    def gen(cur_nimg, generator_step):
+        n = cur_nimg // (training_nimg + transition_nimg)
+        input_size = 2 ** (n + 2)
+        batch_size = batch_size_dict[input_size]
+
+        generator.eval()
+        latents = torch.randn((batch_size, args.latent_size), device=device) * 0.1
+
+        images = generator(latents, None, n, 1.1).cpu()
+        save_image(images, os.path.join(args.images, f'{global_step}.jpg'), nrow=int(math.sqrt(batch_size)))
+        generator.train()
 
 
     def save(cur_nimg, global_step):
@@ -141,9 +153,11 @@ def main(args):
         if global_step % args.save_freq == 0:
             save(cur_nimg, global_step)
 
+        if global_step % args.gen_freq == 0:
+            gen(cur_nimg, global_step)
+
         cur_nimg += batch_size
         global_step += 1
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -170,6 +184,7 @@ if __name__ == '__main__':
     parser.add_argument('--transition-kimg', type=int, default=600, metavar='N')
 
     parser.add_argument('--save_freq', type=int, default=10000, metavar='N')
+    parser.add_argument('--gen_freq', type=int, default=1000, metavar='N')
 
     parser.add_argument('--resume', type=str, metavar='PATH')
     parser.add_argument('--images', type=str, default='images', metavar='DIR')

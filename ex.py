@@ -7,19 +7,24 @@ from context import Context
 
 def dense(params, nin, nout, bias=True, dtype=jnp.float32):
     w = params('w', [nin, nout], dtype)
-    b = params('b', [nout], dtype)
-    def forward(x):
+    if bias: b = params('b', [nout], dtype)
+    def apply_fun(x):
         y = jnp.dot(x, w)
-        if bias:
-            y += b
-        return y
-    return forward
+        return y + b if bias else y
+    return apply_fun
 
 
-def dense(params, nin, nout, bias=True, dtype=jnp.float32, name='dense'):
-    w = params(name, 'w',  shape=[nin, nout], dtype=dtype)
-    if bias: b = params(name, 'b', shape=[nout], dtype=dtype)
-    return lambda x: jnp.dot(x, w) + b if bias else jnp.dot(x, w)
+def conv2d(params, nin, nout, filter_shape, strides=None, padding='VALID', bias=True, dtype=jnp.float32):
+    kernel_shape = (*filter_shape, nin, nout)
+    one = (1,) * len(filter_shape)
+    strides = strides or one
+
+    w = params('w', kernel_shape, dtype)
+    if bias: b = params('b', [nout], dtype)
+    def apply_fun(x):
+        y = lax.conv_general_dilated(x, w, strides, padding, one, one, dimension_numbers=('NHWC', 'HWIO', 'NHWC'))
+        return y + b if bias else y
+    return apply_fun
 
 def conv2d(ctx, x, nin, nout, filter_shape, strides=None, padding='VALID', bias=True, dtype=jnp.float32):
     kernel_shape = (*filter_shape, nin, nout)
